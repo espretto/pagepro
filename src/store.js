@@ -5,7 +5,7 @@ import { createStore } from 'redux'
  * consts and config
  */
 const initial = {
-  title: 'It\'s alive!',
+  title: 'Web-Spider',
   pages: [],
   resources: []
 }

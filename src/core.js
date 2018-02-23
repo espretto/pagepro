@@ -1,6 +1,7 @@
 
 import { store, actions } from './store'
 import headers from './http/headers'
+import htmlmin from './htmlmin'
 import jQuery from 'jquery'
 
 const extend = Object.assign
@@ -37,11 +38,7 @@ const Queue = Base.derive({
 
   dequeue () {
     if (this.items.length) {
-      var item, resolve, reject = this.items.shift()
-        , whenConsumed = this.consumer(item)
-
-      whenConsumed.then(this.dequeue, this.dequeue)
-      whenConsumed.then(resolve, reject)
+      this.consumer(this.items.shift()).then(this.dequeue)
     }
     else {
       this.count -= 1
@@ -49,17 +46,13 @@ const Queue = Base.derive({
   },
 
   put (item) {
-    return new Promise((resolve, reject) => {
-      if (this.count < this.limit) {
-        this.count += 1
-        var whenConsumed = this.consumer(item)
-        whenConsumed.then(this.dequeue, this.dequeue)
-        whenConsumed.then(resolve, reject)
-      }
-      else {
-        this.items.push( [item, resolve, reject] )
-      }  
-    })
+    if (this.count < this.limit) {
+      this.count += 1
+      this.consumer(item).then(this.dequeue)
+    }
+    else {
+      this.items.push(item)
+    }
   }
 
 })
@@ -153,6 +146,7 @@ export const Crawler = Base.derive({
     this.domain = [window.location.protocol, window.location.host].join('//')
     this.alink = window.document.createElement('A')
     this.requeue = Queue.create(jQuery.ajax, 4)
+    // this.pagequeue = Queue.create(url => this.load(url).then(() => this.hydrate), 1)
     this.resources = []
     this.urls = new Set()
   },
@@ -179,7 +173,8 @@ export const Crawler = Base.derive({
   },
 
   hydrate () {
-    var node = this.window.document.documentElement
+    var root = this.window.document.documentElement
+      , node = root
     
     while (node = nextNode(node)) {
       var attrs = TAG_ATTR_MAP[node.nodeName] || EMPTY_ARRAY
@@ -191,27 +186,12 @@ export const Crawler = Base.derive({
         case 1: this.addResource(node.getAttribute(attrs[0]))
       }
     }
-    /*
-    Array.of(this.window.document.styleSheets).forEach(sheet => {
-      
-      var href = attempt(sheet => sheet.href, sheet)
+    
+    var html = root.outerHTML
+    var minified = htmlmin(html)
+    var ratio = minified.length / html.length
 
-      if (href) {
-        if (type(href) === 'error' || href.indexOf(this.domain) !== 0) {
-          requeue.put()
-        }
-        else {
-          requeue.put()
-        }
-      }
-      else {
-        sheet.cssText || sheet.ownerNode.innerHTML
-      }
-
-    })
-    */
-
-
+    console.log(this.window.location.href, ':', 'html-ratio', ':', ratio.toFixed(2) + '%')
   },
 
   addResource (url) {
@@ -229,7 +209,7 @@ export const Crawler = Base.derive({
     
     // head request same domain resources
     if (url.startsWith(this.domain)) {
-      this.requeue.put(extend({ url, context: this }, headquest)).then()
+      this.requeue.put(extend({ url, context: this }, headquest))
     }
     else {
       this.resources.push({ url })
@@ -237,11 +217,16 @@ export const Crawler = Base.derive({
   },
 
   addResourceHead (xhr) {
-    this.resources.push({
+    var resource = {
       url: xhr.options.url,
       status: xhr.status,
       headers: getResponseHeaders(xhr)
-    })
+    }
+
+    this.resources.push(resource)
+    // if (resource.headers && resource.headers['Content-Type'].indexOf('text/html') > -1) {
+    //   this.pagequeue
+    // }
   }
 
 })
