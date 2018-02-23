@@ -1,5 +1,7 @@
-import './css/index.css';
+import './styles/index.css'
+import './tags/app.tag'
+import { store, actions } from './store'
 
-import './event-helper';
-import './stores/itemstore';
-import './router.js';
+const main = document.body.appendChild(document.createElement('main'))
+
+const app = riot.mount(main, 'app').pop()
