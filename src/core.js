@@ -81,6 +81,28 @@ const TAG_ATTR_MAP = {
   VIDEO: ['src', 'poster']
 }
 
+const READY_STATES = {
+  loading: false,
+  interactive: true,
+  complete: true
+}
+
+const ON_READY_STATE_CHANGE = 'onreadystatechange'
+
+const AJAX_PEEK_OPTIONS = {
+  method: 'HEAD',
+  timeout: 5000,
+  beforeSend (xhr, options) {
+    xhr.options = options
+  },
+  success (res, status, xhr) {
+    this.addResourceHead(xhr)
+  },
+  error (xhr, status, err) {
+    this.addResourceHead(xhr)
+  }
+}
+
 /* -----------------------------------------------------------------------------
  * helpers
  */
@@ -125,19 +147,9 @@ function type (any) {
          Object.prototype.toString.call(any).slice(8, -1).toLowerCase()
 }
 
-const headquest = {
-  method: 'HEAD',
-  timeout: 5000,
-  beforeSend (xhr, options) {
-    xhr.options = options
-  },
-  success (res, status, xhr) {
-    this.addResourceHead(xhr)
-  },
-  error (xhr, status, err) {
-    this.addResourceHead(xhr)
-  }
-}
+/* -----------------------------------------------------------------------------
+ * core
+ */
 
 export const Crawler = Base.derive({
 
@@ -145,31 +157,59 @@ export const Crawler = Base.derive({
     this.window = window
     this.domain = [window.location.protocol, window.location.host].join('//')
     this.alink = window.document.createElement('A')
-    this.requeue = Queue.create(jQuery.ajax, 4)
-    // this.pagequeue = Queue.create(url => this.load(url).then(() => this.hydrate), 1)
+    this.peekQueue = Queue.create(jQuery.ajax, 4)
+    this.pageQueue = Queue.create(url => this.load(url).then(() => {
+      this.alink = window.document.createElement('A');
+      this.hydrate()
+    }), 1)
     this.resources = []
     this.urls = new Set()
   },
 
-  load (url) {
-    var that = this
-    
-    this.window.location = url
+  setLocation (url) {
+    const window = this.window
 
-    return new Promise(resolve => {
-      (function poll (){
-        if (that.window.location.href === url && that.window.document.body) {
+    window.location = url
 
-          // update link normalizer
-          that.alink = that.window.document.createElement('A')
-          
-          resolve(that)
+    return new Promise((resolve, reject) => {
+      var doneJob, failJob
+
+      setTimeout(function () {
+        clearTimeout(doneJob)
+        reject()
+      }, 1e4)
+
+      ;(function poll () {
+        if (window.location.href === url) {
+          clearTimeout(failJob)
+          resolve()
         }
         else {
-          setTimeout(poll, 64)
+          doneJob = setTimeout(poll, 1e2)
         }
       }())
     })
+  },
+
+  awaitDocument () {
+    return new Promise(resolve => {
+      var window = this.window
+
+      ;(function poll () {
+        if (READY_STATES[window.document.readyState]) {
+          resolve()
+        }
+        else {
+          setTimeout(poll, 50)
+        }
+      }())
+    })
+  },
+
+  load (url) {
+    return this.setLocation(url)
+      .then(() => this.awaitDocument())
+      .catch(err => console.error(err))
   },
 
   hydrate () {
@@ -190,7 +230,6 @@ export const Crawler = Base.derive({
     var html = root.outerHTML
     var minified = htmlmin(html)
     var ratio = minified.length / html.length
-
     console.log(this.window.location.href, ':', 'html-ratio', ':', ratio.toFixed(2) + '%')
   },
 
@@ -209,7 +248,7 @@ export const Crawler = Base.derive({
     
     // head request same domain resources
     if (url.startsWith(this.domain)) {
-      this.requeue.put(extend({ url, context: this }, headquest))
+      this.peekQueue.put(extend({ url, context: this }, AJAX_PEEK_OPTIONS))
     }
     else {
       this.resources.push({ url })
@@ -224,9 +263,16 @@ export const Crawler = Base.derive({
     }
 
     this.resources.push(resource)
-    // if (resource.headers && resource.headers['Content-Type'].indexOf('text/html') > -1) {
-    //   this.pagequeue
-    // }
+
+    if (
+      resource.status >= 200 &&
+      resource.status < 400 &&
+      resource.headers &&
+      resource.headers['Content-Type'] &&
+      resource.headers['Content-Type'].indexOf('html') > -1
+    ) {
+      this.pageQueue.put(resource.url)
+    }
   }
 
 })
