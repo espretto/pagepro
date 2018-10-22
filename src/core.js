@@ -169,12 +169,12 @@ export const Crawler = Base.derive({
   setLocation (url) {
     const window = this.window
 
-    window.location = url
+    this.window.location = url
 
     return new Promise((resolve, reject) => {
       var doneJob, failJob
 
-      setTimeout(function () {
+      failJob = setTimeout(function () {
         clearTimeout(doneJob)
         reject()
       }, 1e4)
