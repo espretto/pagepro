@@ -16,7 +16,7 @@ Le robot est disponible sous l'URL http://localhost:8192/build/bundle.js. Ci-des
 ```js
 const url = 'http://localhost:8192/build/bundle.js'
 const doc = window.open().document
-doc.write(`<script defer src="{url}"></script>`)
+doc.write(`<script defer src="${url}"></script>`)
 doc.close()
 ```
 Pour l'avoir à porter d'un clic, créer un marque-page avec l'URL ci-dessous. :
